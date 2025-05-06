@@ -30,7 +30,7 @@ data['City'] = le_lokasi.fit_transform(data['City'])
 # Normalisasi fitur numerik
 fitur = ['Category', 'City', 'Price', 'Rating', 'Rating_Count', 'Time_Minutes']
 scaler = MinMaxScaler()
-data_scaled = scaler.fit_transform(data[fitur])
+data_scaled_all = scaler.fit_transform(data[fitur])  # simpan versi semua data
 
 # Streamlit UI
 st.title("Sistem Rekomendasi Destinasi Wisata")
@@ -42,7 +42,7 @@ kategori_input = st.selectbox("Pilih Kategori", kategori_list)
 lokasi_input = st.selectbox("Pilih Lokasi", lokasi_list)
 harga_input = st.number_input("Harga Maksimal (Rp)", min_value=0, value=50000)
 rating_input = st.slider("Rating Minimal", min_value=0.0, max_value=5.0, value=4.0, step=0.1)
-jumlah_rating_input = st.number_input("Jumlah Rating", min_value=0, value=20)
+jumlah_rating_input = st.number_input("Jumlah Rating Minimal", min_value=0, value=20)
 waktu_input = st.slider("Estimasi Waktu Kunjungan (menit)", min_value=10.0, max_value=600.0, value=120.0, step=10.0)
 
 # Pilih metode jarak
@@ -55,20 +55,35 @@ if st.button("Rekomendasikan"):
     input_user = [[kategori_encoded, lokasi_encoded, harga_input, rating_input, jumlah_rating_input, waktu_input]]
     input_scaled = scaler.transform(input_user)
 
-    # Latih model KNN berdasarkan metode jarak
-    knn = NearestNeighbors(n_neighbors=5, metric=metric_option)
-    knn.fit(data_scaled)
+    # Filter data berdasarkan batas preferensi user
+    filter_data = data[
+        (df['Price'] <= harga_input) &
+        (df['Rating'] >= rating_input) &
+        (df['Rating_Count'] >= jumlah_rating_input)
+    ]
 
-    # Cari rekomendasi
-    distances, indices = knn.kneighbors(input_scaled)
+    if filter_data.empty:
+        st.warning("Tidak ada destinasi yang memenuhi kriteria filter Anda.")
+    else:
+        # Normalisasi ulang data yang sudah difilter
+        data_filtered_scaled = scaler.transform(filter_data[fitur])
 
-    st.subheader(f"Rekomendasi Destinasi ({metric_option.title()} Distance):")
-    for idx in indices[0]:
-        row = df.iloc[idx]
-        st.markdown(f"**{row['Place_Name']}**")
-        st.markdown(f"- Kategori: {row['Category']}")
-        st.markdown(f"- Lokasi: {row['City']}")
-        st.markdown(f"- Harga: Rp{row['Price']:,}")
-        st.markdown(f"- Rating: {row['Rating'] / 10:.1f}")
-        st.markdown(f"- Estimasi Waktu: {row['Time_Minutes']} menit")
-        st.markdown("---")
+        # Latih KNN
+        knn = NearestNeighbors(n_neighbors=5, metric=metric_option)
+        knn.fit(data_filtered_scaled)
+
+        # Cari rekomendasi
+        distances, indices = knn.kneighbors(input_scaled)
+
+        st.subheader(f"Rekomendasi Destinasi ({metric_option.title()} Distance):")
+        for idx, dist in zip(indices[0], distances[0]):
+            row = filter_data.iloc[idx]
+            st.markdown(f"**{row['Place_Name']}**")
+            st.markdown(f"- Kategori: {df.loc[row.name, 'Category']}")
+            st.markdown(f"- Lokasi: {df.loc[row.name, 'City']}")
+            st.markdown(f"- Harga: Rp{row['Price']:,}")
+            st.markdown(f"- Rating: {row['Rating']:.1f}")
+            st.markdown(f"- Jumlah Rating: {row['Rating_Count']}")
+            st.markdown(f"- Estimasi Waktu: {row['Time_Minutes']} menit")
+            st.markdown(f"- Skor Kemiripan (Jarak): `{dist:.4f}`")
+            st.markdown("---")
